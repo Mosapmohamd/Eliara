@@ -73,19 +73,44 @@ check requires that capability to exist first; this is a placeholder
 that tells the truth about the gap rather than claiming `HEALTHY` for
 something that isn't there.
 
-## Phase 3+ (not yet built)
+## Phase 3 — Data Health & Freshness (issue #32)
 
-- System health checks (`health.py`) — DB/LLM/retrieval availability,
-  latency percentiles, computed from `RequestTrace` data over
-  `MonitoringConfig.health_window_minutes`.
-- Data health (`data_health.py`) — freshness, suspicious zero/row-count
-  changes, company-aware (via a `CompanyConfig` extension once there's a
-  concrete per-company override to add — not speculative fields today).
+- `data_health.py` — company-aware, config-driven business-data checks:
+  staleness (reusing `ReadOnlyExecutor.data_boundaries()` from before
+  monitoring existed), critical-view smoke checks, and a generic
+  configured-rule engine (`nonzero`, `row_count_min`, `row_count_max`,
+  `null_rate_max`) that covers suspicious-zero, row-count-range, and
+  NULL-rate checks as instances of one mechanism rather than three
+  near-duplicate ones.
+- `DataAnomaly` — a structured finding (not a free-form log string, per
+  the issue's explicit requirement), field-shape-compatible with the
+  master spec's future Anomaly Engine so it slots in without reshaping
+  when #33/#34 arrive.
+- New `CompanyConfig` fields: `critical_views: list[str]` and
+  `data_health_checks: list[dict]` — both empty for Beta and Tire Guru
+  in the committed `companies.yaml` today. The mechanism is fully built
+  and tested; the actual business thresholds ("which views are
+  critical," "which metric should never be zero") need someone who
+  knows each company's real data to configure them — fabricating those
+  numbers would be exactly the kind of invented certainty this project
+  has consistently avoided (same principle as `check_fallback_llm`'s
+  honest gap in Phase 2).
+- `EXPECTED_EMPTY` vs `SUSPICIOUS_ZERO`, handled explicitly: an empty
+  view result is never flagged unless a rule sets `must_have_rows` —
+  the issue's explicit requirement to distinguish the two.
+- 24 new tests in `tests/unit/test_data_health.py`, one per acceptance
+  criterion (stale data → anomaly, broken view → anomaly, configurable
+  thresholds, empty-vs-suspicious-zero distinction, evidence present on
+  every anomaly) plus 3 new tests for the `CompanyConfig` fields
+  themselves.
+
+## Phase 4+ (not yet built)
+
 - AI quality monitoring (`ai_health.py`) — routing/entity/SQL-retry
   failure rates, computed from the same trace data.
 - Anomaly engine, incident engine, root-cause diagnosis (advisory only —
   never executes tools or corrective actions), monitoring API endpoints,
   and the simple control-center view.
 
-Each phase gets a real design pass against the actual data Phase 1
-starts collecting, rather than being speculatively built now.
+Each phase gets a real design pass against the actual data earlier
+phases collect, rather than being speculatively built now.

@@ -14,9 +14,17 @@
 #
 # Do not hardcode a company's db path, scan views, or directories anywhere
 # else in the codebase — this file is the single source of truth for that.
+#
+# company_id values (e01, e02, ...) are deliberately opaque — they don't
+# reveal the company name in URLs, request bodies, or logs. This is
+# separate from db_path/playbooks_dir/prompts_dir/embedding_cache_dir
+# below, which intentionally still point at the original beta/tire_guru
+# file and directory names — only the logical id changed, not any file
+# on disk. display_name stays human-readable for anywhere the company
+# name should actually be shown.
 
 companies:
-  beta:
+  e01:
     display_name: "Beta"
     db_path: data/companies/beta/beta.db
     playbooks_dir: companies/beta/playbooks
@@ -32,8 +40,19 @@ companies:
       - vw_q018_slow_moving_items_review_priority
       - vw_inventory_action_stockout_replenishment
       - vw_inventory_action_overstock_excess
+    # Data health (issue #32) — deliberately empty. critical_views and
+    # data_health_checks need someone who knows Beta's real business
+    # data to name actual critical views and confirm actual "this should
+    # never be zero" thresholds — fabricating values here would be
+    # exactly the kind of invented-certainty this project has
+    # consistently avoided (see check_fallback_llm's honest gap in
+    # app/monitoring/health.py for the same principle). The mechanism is
+    # fully built and tested (app/monitoring/data_health.py); only real
+    # configuration is missing.
+    critical_views: []
+    data_health_checks: []
 
-  tire_guru:
+  e02:
     display_name: "Tire Guru"
     db_path: data/companies/tire_guru/tire_guru.db
     playbooks_dir: companies/tire_guru/playbooks
@@ -86,3 +105,8 @@ companies:
     # yet (no Tire Guru-specific playbooks or prompt overrides authored) —
     # this is fine, both fall back to shared/no-op behavior, but it means
     # Tire Guru currently gets zero multi-step business reviews.
+    # Data health (issue #32) — deliberately empty, same reasoning as
+    # Beta's: needs someone who knows Tire Guru's real business data to
+    # configure real critical views and thresholds, not fabricated ones.
+    critical_views: []
+    data_health_checks: []
