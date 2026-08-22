@@ -40,7 +40,7 @@ def test_shared_default_greeting_mentions_no_company_name():
 def test_beta_override_mentions_beta_and_nothing_else():
     repo_root = Path(__file__).resolve().parents[2]
     registry = CompanyRegistry.from_file(repo_root / "companies.yaml")
-    prompts = PromptManager.for_company(registry.get("beta"))
+    prompts = PromptManager.for_company(registry.get("e01"))
     greeting = prompts.render("greeting_message").user
     assert "Beta" in greeting
     assert "Tire Guru" not in greeting
@@ -49,7 +49,7 @@ def test_beta_override_mentions_beta_and_nothing_else():
 def test_tire_guru_override_mentions_tire_guru_and_nothing_else():
     repo_root = Path(__file__).resolve().parents[2]
     registry = CompanyRegistry.from_file(repo_root / "companies.yaml")
-    prompts = PromptManager.for_company(registry.get("tire_guru"))
+    prompts = PromptManager.for_company(registry.get("e02"))
     greeting = prompts.render("greeting_message").user
     assert "Tire Guru" in greeting
     assert "Beta" not in greeting
@@ -61,9 +61,9 @@ def test_beta_and_tire_guru_greetings_are_actually_different():
     directory) would make this pass falsely if only checked in isolation."""
     repo_root = Path(__file__).resolve().parents[2]
     registry = CompanyRegistry.from_file(repo_root / "companies.yaml")
-    beta_greeting = PromptManager.for_company(registry.get("beta")).render("greeting_message").user
+    beta_greeting = PromptManager.for_company(registry.get("e01")).render("greeting_message").user
     tire_guru_greeting = (
-        PromptManager.for_company(registry.get("tire_guru")).render("greeting_message").user
+        PromptManager.for_company(registry.get("e02")).render("greeting_message").user
     )
     assert beta_greeting != tire_guru_greeting
 
@@ -74,7 +74,7 @@ def test_tire_guru_greeting_references_only_confirmed_real_capabilities():
     investigation) — not invented capabilities Tire Guru doesn't have."""
     repo_root = Path(__file__).resolve().parents[2]
     registry = CompanyRegistry.from_file(repo_root / "companies.yaml")
-    greeting = PromptManager.for_company(registry.get("tire_guru")).render("greeting_message").user
+    greeting = PromptManager.for_company(registry.get("e02")).render("greeting_message").user
     # dead stock, stockout risk, and supplier reliability are the 3
     # confirmed-real Tire Guru scan capabilities from issue #6/#28.
     assert "dead stock" in greeting.lower()
