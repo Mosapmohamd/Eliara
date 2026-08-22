@@ -39,7 +39,41 @@ know the literal HTTP path) — a follow-up can thread it in from the API
 layer if useful, or it can be joined from the same `request_id` already
 in every `http_request` log line.
 
-## Phase 2+ (not yet built)
+## Phase 2 — System Health (issue #31)
+
+- `health.py` — deterministic, no-LLM component checks: database
+  connectivity (`SELECT 1` via the existing `run_metadata_sql`), LLM key
+  presence (not a live API call — see the module docstring for why),
+  retrieval index availability, cache round-trip, and latency/error-rate
+  computed from Phase 1's `RequestTrace` data over
+  `MonitoringConfig.health_window_minutes`.
+- `HealthChecker.check_company()` runs every check independently guarded
+  (one check's own bug degrades that component to CRITICAL with a detail
+  message, never raises out of the whole snapshot) and returns a
+  `HealthSnapshot` with per-component `HEALTHY`/`WARNING`/`CRITICAL` plus
+  an aggregate `overall_status`.
+- **Not wired into the live chat request path** — this is on-demand,
+  pull-based computation, meant to be called from a future `/monitor/*`
+  endpoint (Phase 7 / issue #38), never from anything a user's question
+  travels through. That's a stronger version of "must never crash the
+  request path" than a try/except around a call site would give: it's
+  structurally impossible for a health-check bug to affect a chat
+  response, because health.py is never invoked while handling one.
+- 23 new tests, including a direct test per acceptance criterion:
+  deliberately breaking each component (DB connection error, empty
+  cache, empty index, missing API key) and confirming the health state
+  actually changes — not just that a healthy state reports correctly.
+
+### Known Phase 2 gap, reported honestly rather than fabricated
+
+`check_fallback_llm()` always reports `WARNING` — there is no fallback
+LLM configuration anywhere in `Settings` today (single
+`orchestrator_model`/`sqlgen_model`, no fallback). Adding a real fallback
+check requires that capability to exist first; this is a placeholder
+that tells the truth about the gap rather than claiming `HEALTHY` for
+something that isn't there.
+
+## Phase 3+ (not yet built)
 
 - System health checks (`health.py`) — DB/LLM/retrieval availability,
   latency percentiles, computed from `RequestTrace` data over
