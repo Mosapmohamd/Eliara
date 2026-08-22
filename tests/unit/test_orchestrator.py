@@ -431,6 +431,63 @@ async def test_telemetry_absence_never_breaks_a_request(discovery, executor):
     assert outcome.decision == "use_view"
 
 
+async def test_telemetry_captures_entity_resolution_outcome(discovery, executor, tmp_path):
+    """Issue #33: entity_type/entity_status/entity_resolved in the trace
+    must reflect what Resolution._entities.resolve() actually returned
+    this request — real data, not fabricated. Uses a fake EntityIndex
+    (same direct-attribute-assignment pattern CompanyContextManager
+    itself uses in production) so the resolution status is fully
+    controlled and verifiable."""
+    from app.discovery.entity_resolver import Resolution
+    from app.monitoring.telemetry import TraceRecorder
+
+    class _FakeEntities:
+        def resolve(self, column, value):
+            return Resolution(status="ambiguous", column=column, requested=value, candidates=["A Corp", "A Co"])
+
+    llm = FakeLLM(RoutingDecision(
+        decision="use_view",
+        view_name="vw_q002_top_10_customers_by_lifetime_revenue",
+        endpoint_filters={"customer_name": "A"},
+    ))
+    orch = _orchestrator(discovery, executor, llm)
+    orch._telemetry = TraceRecorder(tmp_path / "monitoring")
+    orch._entities = _FakeEntities()
+    await orch.handle("entity-session", "expand on A")
+
+    import json
+    files = list((tmp_path / "monitoring").rglob("traces-*.jsonl"))
+    entry = json.loads(files[0].read_text().splitlines()[0])
+    assert entry["entity_status"] == "ambiguous"
+    assert entry["entity_type"] == "customer_name"
+    assert entry["entity_resolved"] is False
+
+
+async def test_telemetry_captures_sql_retry_count(discovery, executor, tmp_path):
+    from app.monitoring.telemetry import TraceRecorder
+    from app.orchestrator.decision_models import SQLRequestSpec
+
+    llm = FakeLLM(
+        RoutingDecision(
+            decision="needs_sql",
+            sql_request=SQLRequestSpec(task_description="x", tables=["fact_ai_sales_net"]),
+        ),
+        call_texts=[
+            "SELECT * FROM forbidden_secret_table",         # rejected -> retry 1
+            "SELECT customer_code FROM fact_ai_sales_net",  # accepted
+            "Recovered answer.",
+        ],
+    )
+    orch = _orchestrator(discovery, executor, llm)
+    orch._telemetry = TraceRecorder(tmp_path / "monitoring")
+    await orch.handle("s1", "some custom question")
+
+    import json
+    files = list((tmp_path / "monitoring").rglob("traces-*.jsonl"))
+    entry = json.loads(files[0].read_text().splitlines()[0])
+    assert entry["sql_retries"] == 1
+
+
 async def test_greeting_replies_instantly_without_answer_call(discovery, executor):
     llm = FakeLLM(RoutingDecision(decision="greeting"))
     orch = _orchestrator(discovery, executor, llm)

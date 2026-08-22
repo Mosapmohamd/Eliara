@@ -65,7 +65,10 @@ class DataAnomaly:
         return dataclasses.asdict(self)
 
 
-def _new_anomaly(company_id: str, category: str, severity: str, metric: str, observed, expected, evidence: dict) -> DataAnomaly:
+def new_anomaly(company_id: str, category: str, severity: str, metric: str, observed, expected, evidence: dict) -> DataAnomaly:
+    """Shared anomaly constructor — used by data_health.py and
+    ai_health.py alike (public, not module-private, precisely because
+    it's reused across monitoring modules rather than duplicated)."""
     return DataAnomaly(
         anomaly_id=uuid.uuid4().hex[:12],
         timestamp=datetime.now(UTC).isoformat(),
@@ -104,7 +107,7 @@ def check_staleness(company_id: str, executor, boundaries_table: str | None, bou
         severity = WARNING
     else:
         return HEALTHY, []
-    anomaly = _new_anomaly(
+    anomaly = new_anomaly(
         company_id, STALE_DATA, severity, "data_age_hours",
         observed=round(age_hours, 1), expected=f"< {config.stale_data_hours_warning}h",
         evidence={"last_date": boundaries.last_date, "boundaries_table": boundaries_table},
@@ -128,7 +131,7 @@ def check_critical_views(company_id: str, executor, critical_views: list[str]) -
         try:
             executor.run_view(view, limit=1)
         except Exception as exc:  # noqa: BLE001 - any failure here is exactly what this check exists to catch
-            anomalies.append(_new_anomaly(
+            anomalies.append(new_anomaly(
                 company_id, BROKEN_VIEW, CRITICAL, "view_queryable",
                 observed=f"{type(exc).__name__}: {exc}", expected="query succeeds",
                 evidence={"view": view},
@@ -159,7 +162,7 @@ def check_value_rules(company_id: str, executor, checks: list[dict]) -> tuple[st
         try:
             result = executor.run_view(view)
         except Exception as exc:  # noqa: BLE001 - a rule referencing a broken view is itself a finding, not a crash
-            anomalies.append(_new_anomaly(
+            anomalies.append(new_anomaly(
                 company_id, BROKEN_VIEW, CRITICAL, "rule_view_queryable",
                 observed=f"{type(exc).__name__}: {exc}", expected="query succeeds",
                 evidence={"view": view, "rule": rule},
@@ -169,7 +172,7 @@ def check_value_rules(company_id: str, executor, checks: list[dict]) -> tuple[st
         row_count = result.row_count
         if row_count == 0:
             if rule.get("must_have_rows"):
-                anomalies.append(_new_anomaly(
+                anomalies.append(new_anomaly(
                     company_id, ROW_COUNT_ANOMALY, WARNING, "row_count",
                     observed=0, expected=">= 1 row (must_have_rows)",
                     evidence={"view": view, "rule": rule},
@@ -178,13 +181,13 @@ def check_value_rules(company_id: str, executor, checks: list[dict]) -> tuple[st
             continue
 
         if check_type == "row_count_min" and row_count < rule.get("value", 0):
-            anomalies.append(_new_anomaly(
+            anomalies.append(new_anomaly(
                 company_id, ROW_COUNT_ANOMALY, WARNING, "row_count",
                 observed=row_count, expected=f">= {rule.get('value')}",
                 evidence={"view": view, "rule": rule},
             ))
         elif check_type == "row_count_max" and row_count > rule.get("value", float("inf")):
-            anomalies.append(_new_anomaly(
+            anomalies.append(new_anomaly(
                 company_id, ROW_COUNT_ANOMALY, WARNING, "row_count",
                 observed=row_count, expected=f"<= {rule.get('value')}",
                 evidence={"view": view, "rule": rule},
@@ -195,7 +198,7 @@ def check_value_rules(company_id: str, executor, checks: list[dict]) -> tuple[st
             if col_idx is not None:
                 values = [row[col_idx] for row in result.rows]
                 if values and all((v == 0 or v is None) for v in values):
-                    anomalies.append(_new_anomaly(
+                    anomalies.append(new_anomaly(
                         company_id, SUSPICIOUS_ZERO, WARNING, column,
                         observed=0, expected="nonzero",
                         evidence={"view": view, "column": column, "rule": rule},
@@ -207,7 +210,7 @@ def check_value_rules(company_id: str, executor, checks: list[dict]) -> tuple[st
                 null_count = sum(1 for row in result.rows if row[col_idx] is None)
                 null_rate = null_count / len(result.rows)
                 if null_rate > rule.get("value", 1.0):
-                    anomalies.append(_new_anomaly(
+                    anomalies.append(new_anomaly(
                         company_id, NULL_RATE_ANOMALY, WARNING, f"{column}_null_rate",
                         observed=round(null_rate, 4), expected=f"<= {rule.get('value')}",
                         evidence={"view": view, "column": column, "rule": rule},
@@ -242,7 +245,7 @@ def check_company_data_health(
         except Exception as exc:
             log.warning("data_health_check_failed", check=name, company_id=company_id, exc_info=True)
             severities.append(CRITICAL)
-            all_anomalies.append(_new_anomaly(
+            all_anomalies.append(new_anomaly(
                 company_id, "UNKNOWN", CRITICAL, name,
                 observed=f"{type(exc).__name__}: {exc}", expected="check runs without error",
                 evidence={"check": name},

@@ -228,6 +228,12 @@ class Orchestrator:
         self._last_trace = None
         self._t_execution = 0
         self._t_answer = 0
+        # Phase 4 monitoring (issue #33): real, already-computed signals,
+        # not fabricated ones. entity_resolutions accumulates every
+        # Resolution._resolve_filters() actually returns this request;
+        # sql_retries counts real corrective attempts from _run_sql_path.
+        self._last_entity_resolutions: list[tuple[str, str]] = []
+        self._last_sql_retries = 0
 
         self._conversations.purge_expired()
         history = self._conversations.get_history(session_id)
@@ -465,6 +471,24 @@ class Orchestrator:
                 answer=outcome.answer,
             )
         if self._telemetry is not None:
+            # Phase 4 (issue #33): derive entity_type/entity_status/
+            # entity_resolved from what _resolve_filters() actually
+            # observed this request — real data, not fabricated. When
+            # multiple filters were resolved, the worst outcome becomes
+            # the headline signal (an unresolved entity matters more
+            # than three resolved ones).
+            entity_type = entity_status = None
+            entity_resolved = None
+            if self._last_entity_resolutions:
+                severity_order = {"unknown": 0, "ambiguous": 1, "no_index": 2, "resolved": 3, "exact": 4}
+                worst_column, worst_status = min(
+                    self._last_entity_resolutions, key=lambda cs: severity_order.get(cs[1], 5)
+                )
+                entity_type = worst_column
+                entity_status = worst_status
+                entity_resolved = all(
+                    s in ("exact", "resolved", "no_index") for _, s in self._last_entity_resolutions
+                )
             self._telemetry.record(
                 RequestTrace(
                     request_id=get_request_id() or "unknown",
@@ -474,7 +498,11 @@ class Orchestrator:
                     question=message,
                     route=outcome.decision,
                     selected_view=outcome.view_used,
+                    entity_type=entity_type,
+                    entity_status=entity_status,
+                    entity_resolved=entity_resolved,
                     sql_generated=outcome.sql_generated,
+                    sql_retries=self._last_sql_retries,
                     routing_ms=outcome.routing_ms,
                     execution_ms=outcome.execution_ms,
                     answer_ms=outcome.answer_ms,
@@ -625,6 +653,7 @@ class Orchestrator:
         resolved: dict[str, str] = {}
         for column, value in filters.items():
             outcome: Resolution = self._entities.resolve(column, value)
+            self._last_entity_resolutions.append((column, outcome.status))
             if outcome.status == "resolved":
                 log.info(
                     "entity_resolved",
@@ -1001,6 +1030,7 @@ class Orchestrator:
             if self._entities is not None:
                 column = f"{playbook.entity_kind or 'customer'}_name"
                 outcome = self._entities.resolve(column, entity)
+                self._last_entity_resolutions.append((column, outcome.status))
                 if outcome.status == "ambiguous":
                     options = "\n".join(f"- {c}" for c in outcome.candidates)
                     return (
@@ -1099,9 +1129,11 @@ class Orchestrator:
             tokens_out += response.output_tokens
             try:
                 validated = validate_sql(sql_text, whitelist, self._settings.max_rows)
+                self._last_sql_retries = attempt
                 break
             except SQLValidationError as exc:
                 last_error = exc.internal_detail
+                self._last_sql_retries = attempt + 1
                 log.warning("sql_rejected", attempt=attempt + 1, reason=last_error)
         if validated is None:
             # Two corrective attempts failed — this is an EXPECTED outcome for a

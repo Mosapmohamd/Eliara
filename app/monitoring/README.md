@@ -104,13 +104,76 @@ something that isn't there.
   every anomaly) plus 3 new tests for the `CompanyConfig` fields
   themselves.
 
-## Phase 4+ (not yet built)
+## Phase 4 — AI-Quality Anomaly Monitoring (issue #33)
 
-- AI quality monitoring (`ai_health.py`) — routing/entity/SQL-retry
-  failure rates, computed from the same trace data.
-- Anomaly engine, incident engine, root-cause diagnosis (advisory only —
-  never executes tools or corrective actions), monitoring API endpoints,
-  and the simple control-center view.
+- `ai_health.py` — deterministic checks over `RequestTrace` data:
+  entity-resolution failures (per-occurrence, using `entity_status` —
+  see below), suspicious-zero results (a *resolved* entity with an
+  empty result — deliberately distinct from an unresolved entity's
+  empty result, which is already covered by the entity-resolution
+  check, so the same request never gets double-flagged), SQL fallback
+  rate, LLM/request failure rate (reuses Phase 1's `db_error_rate_*`
+  thresholds), and clarification rate (measured and reported, but never
+  escalates severity — no confirmed threshold exists for it yet, same
+  honest-gap pattern as Phase 2/3).
+- **Wired real data into `RequestTrace` that Phase 1 had deferred**:
+  `entity_status` (from `Resolution.status` — `_resolve_filters()` and
+  the playbook-entity path now record every resolution outcome onto
+  `self._last_entity_resolutions`) and `sql_retries` (from
+  `_run_sql_path`'s actual corrective-attempt count). `entity_confidence`
+  stays deliberately unpopulated — `Resolution` has no numeric
+  confidence, only the categorical status, and mapping status onto an
+  invented float would be exactly the kind of fabricated certainty this
+  project has avoided throughout; `entity_status` carries the real
+  signal instead.
+- Reuses `DataAnomaly` (Phase 3) as the output shape rather than
+  inventing a fourth anomaly type — `new_anomaly()` was made a public,
+  shared constructor for this reason.
+- 23 new tests in `tests/unit/test_ai_health.py`, one per acceptance
+  criterion, plus 3 new integration tests in `tests/unit/test_orchestrator.py`
+  proving `entity_status`/`sql_retries` land correctly in a real
+  recorded trace (not just that the derivation logic works in
+  isolation).
+
+## Phase 5 — Unified Incident Engine (issue #34)
+
+- `incidents.py` — converts anomalies from Phases 2/3/4 into
+  deduplicated, auditable `Incident` records with a validated lifecycle.
+- **Lifecycle states are deliberately `OPEN -> DIAGNOSED -> ACKNOWLEDGED
+  -> CLOSED` (plus `ESCALATED`), NOT the issue's literally-worded
+  `OPEN->DIAGNOSED->HEALING->VERIFIED->CLOSED`** — confirmed explicitly
+  with the project owner before implementing. `HEALING`/`VERIFIED`
+  implies an automated remediation step, contradicting both the master
+  monitoring spec's non-goals ("Do NOT add HEALING or AUTO-RECOVERY
+  states yet") and the explicit decision to exclude issues #36/#37
+  (self-healing) from this work entirely. See `incidents.py`'s module
+  docstring for the full reasoning; `test_no_healing_or_verified_states_exist`
+  pins this structurally, not just by convention.
+- Deduplication key: `(company_id, category, metric)` — the same
+  underlying failure recurring collapses into one incident with an
+  incrementing `occurrence_count`, never a new incident per occurrence.
+  A `CLOSED` incident whose failure recurs reopens the same incident
+  rather than spamming a new one.
+- Every mutation goes through validated transitions (`InvalidTransition`
+  raised on an illegal jump) and is recorded in the incident's own
+  `history` list — auditable, not just mutable.
+- `set_diagnosis()` exists as a thin, validated setter for Phase 6
+  (#35) to use — `diagnosis` stays `None` until #35 is built; this
+  phase never fabricates one.
+- Concurrency proven: many threads reporting the same underlying
+  failure simultaneously dedupe into exactly one incident (matches
+  Phase 1's concurrency-safety bar).
+- 26 new tests in `tests/unit/test_incidents.py`, one per acceptance
+  criterion plus the dedup/reopen/concurrency edge cases.
+
+## Phase 6+ (not yet built)
+
+- Root-cause diagnosis (#35) — advisory only, never executes tools or
+  corrective actions; consumes incidents via `set_diagnosis()`.
+- Monitoring API endpoints and the simple control-center view (#38).
+- Issues #36/#37 (self-healing engine, post-heal verification) are
+  explicitly excluded from this work — see incidents.py's module
+  docstring.
 
 Each phase gets a real design pass against the actual data earlier
 phases collect, rather than being speculatively built now.

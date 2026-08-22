@@ -50,6 +50,13 @@ class RequestTrace:
 
     # Entity resolution
     entity_type: str | None = None
+    entity_status: str | None = None  # Resolution.status: exact|resolved|ambiguous|unknown|no_index
+    # entity_confidence is deliberately never populated as of Phase 4 —
+    # Resolution has no numeric confidence, only the categorical status
+    # above. Mapping status onto an invented float (e.g. exact=1.0,
+    # ambiguous=0.5) would be exactly the kind of fabricated certainty
+    # this project has consistently avoided. entity_status carries the
+    # real signal; use that, not a made-up number.
     entity_confidence: float | None = None
     entity_resolved: bool | None = None
 
