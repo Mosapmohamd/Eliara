@@ -19,9 +19,18 @@ async def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("ELIARA_EMBEDDING_BACKEND", "hashing")
     monkeypatch.setenv("ELIARA_EMBEDDING_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("ELIARA_EXTERNAL_ENABLED", "true")
+    # Isolate monitoring storage per test too — without this, tests that
+    # actually check telemetry/incident data (tests/integration/
+    # test_monitor_endpoints.py) could read stale state from whatever
+    # get_monitoring_config() cached from an earlier test in the same
+    # run. Existing tests that don't touch monitoring data are unaffected
+    # either way.
+    monkeypatch.setenv("ELIARA_MONITOR_STORAGE_DIR", str(tmp_path / "monitoring_data"))
     from app.core.config import get_settings
+    from app.monitoring.config import get_monitoring_config
 
     get_settings.cache_clear()
+    get_monitoring_config.cache_clear()
 
     async def fake_structured(self, prompt, output_model, *, model, max_tokens=1000):
         return (
@@ -53,6 +62,7 @@ async def app_client(tmp_path, monkeypatch):
     ):
         yield client
     get_settings.cache_clear()
+    get_monitoring_config.cache_clear()
 
 
 @pytest.fixture()

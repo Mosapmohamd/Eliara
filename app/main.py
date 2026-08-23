@@ -15,7 +15,9 @@ from app.api.middleware import RequestContextMiddleware
 from app.api.v1.catalogue import router as catalogue_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.compat import router as compat_router
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.health import router as health_router
+from app.api.v1.monitor import router as monitor_router
 from app.api.v1.sessions import router as sessions_router
 from app.company.context import CompanyContextManager
 from app.company.registry import CompanyRegistry, CompanyRegistryError
@@ -26,6 +28,7 @@ from app.core.errors import EliaraError
 from app.core.logging import get_logger, setup_logging
 from app.llm.anthropic_client import AnthropicClient
 from app.monitoring.config import get_monitoring_config
+from app.monitoring.incidents import IncidentEngine
 from app.monitoring.telemetry import TraceRecorder
 
 log = get_logger("main")
@@ -50,6 +53,14 @@ async def lifespan(app: FastAPI):
     # not a coincidence.
     monitor_config = get_monitoring_config()
     telemetry = TraceRecorder(monitor_config.storage_dir, enabled=monitor_config.enabled)
+    app.state.telemetry = telemetry
+    # Shared across companies (each Incident already carries its own
+    # company_id — same "one platform-level instance, always company-
+    # scoped per record" shape as audit/telemetry above), persisted
+    # under the same monitoring storage_dir.
+    app.state.incident_engine = IncidentEngine(
+        f"{monitor_config.storage_dir}/incidents", enabled=monitor_config.enabled
+    )
 
     try:
         registry = CompanyRegistry.from_file(settings.companies_config_path)
@@ -99,6 +110,8 @@ def create_app() -> FastAPI:
     app.include_router(sessions_router, prefix="/api/v1")
     app.include_router(catalogue_router, prefix="/api/v1")
     app.include_router(compat_router, prefix="/api/v1")
+    app.include_router(monitor_router, prefix="/api/v1")
+    app.include_router(dashboard_router)  # root level, no prefix — nicer URL for the demo (/monitor/dashboard)
     if settings.legacy_api_enabled:
         app.include_router(legacy_router)  # root level, no prefix — on purpose
 

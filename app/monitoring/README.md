@@ -166,7 +166,52 @@ something that isn't there.
 - 26 new tests in `tests/unit/test_incidents.py`, one per acceptance
   criterion plus the dedup/reopen/concurrency edge cases.
 
-## Phase 6+ (not yet built)
+## Phase 6 — Root-Cause Diagnosis (issue #35) — not yet built
+
+Deferred out of strict numeric order: #38 (Phase 7, below) was built
+first, ahead of #35, at the project owner's explicit request to have a
+working dashboard ready for a specific demo deadline. `Incident.
+diagnosis` and `IncidentEngine.set_diagnosis()` (Phase 5) already exist
+specifically so #35 can be added later without reshaping anything —
+advisory only, never executing tools or corrective actions, per the
+master spec.
+
+## Phase 7 — Health Control Center (issue #38)
+
+- `app/api/v1/monitor.py` — read-only, company-scoped JSON API:
+  `GET /api/v1/monitor/health` (combined system+data+AI, all companies
+  or one via `?company_id=`), `/health/system`, `/health/data`,
+  `/health/ai`, `/incidents`, `/incidents/{id}`, `/metrics`,
+  `/traces/{request_id}`. Every check runs on-demand (pull-based) when
+  an endpoint is hit — hitting `/health/data` or `/health/ai` also
+  feeds any anomalies found into the shared `IncidentEngine` via
+  `app.state.incident_engine`, so browsing the dashboard is what keeps
+  incidents current until a real scheduler exists.
+- `app/api/v1/dashboard.py` — `GET /monitor/dashboard`, one
+  dependency-free HTML page (vanilla JS, no build step) that calls the
+  API above and renders overall status, component breakdowns, recent
+  latency/error-rate, and active incidents. Deliberately simple per the
+  issue's own instruction ("Keep the UI simple... Backend correctness
+  is the priority").
+- **No auto-heal data anywhere** — issue #38 asks for "auto-heal
+  attempts and success rate" and separating "human-required" from
+  "automatically recoverable" incidents. That capability doesn't exist
+  (issues #36/#37 explicitly excluded from this work). The dashboard
+  says so plainly, in the UI itself, not just in a code comment —
+  every incident is shown as requiring human review because that's
+  true of all of them right now.
+- No LLM anywhere in this phase — proven structurally in tests
+  (`test_health_endpoints_never_require_an_llm`,
+  `test_dashboard_does_not_import_llm_client`), not just asserted.
+- 18 new **live integration tests** in
+  `tests/integration/test_monitor_endpoints.py` — these spin up the
+  real FastAPI app and make real HTTP requests (not just calling the
+  underlying functions directly), including a request that sends a real
+  `/chat` call and confirms the resulting trace is visible through
+  `/monitor/metrics` — proof the whole pipeline (Phase 1 telemetry →
+  Phase 7 dashboard) is actually wired together end to end.
+
+## Phase 8+ (not yet built)
 
 - Root-cause diagnosis (#35) — advisory only, never executes tools or
   corrective actions; consumes incidents via `set_diagnosis()`.
