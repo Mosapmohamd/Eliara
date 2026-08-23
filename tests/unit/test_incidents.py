@@ -263,15 +263,48 @@ def test_query_by_status():
 
 
 def test_query_by_time():
+    """Needs a real gap on BOTH sides of the cutoff, not just after it.
+    Capturing `cutoff` immediately after creating the first incident
+    left them close enough in wall-clock time that, on a coarse-
+    resolution clock (Windows in particular), both calls to
+    datetime.now() could return the identical timestamp string — and
+    since the filter is inclusive (last_seen >= since), an equal
+    timestamp got wrongly counted as "since" too, silently including
+    the first incident. Sleeping before AND after cutoff guarantees a
+    real gap on both sides."""
     import time
 
     engine = IncidentEngine()
     engine.record_anomaly(_anomaly())
+    time.sleep(0.05)
     cutoff = __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()
-    time.sleep(0.01)
+    time.sleep(0.05)
     engine.record_anomaly(_anomaly(category="BROKEN_VIEW"))
     recent = engine.query(since=cutoff)
     assert len(recent) == 1
+
+
+def test_query_by_time_boundary_is_deterministic_no_clock_dependency():
+    """The clock-timing-independent companion to test_query_by_time —
+    constructs incidents with explicit last_seen values directly, so
+    this pins the exact inclusive-boundary behavior (since <= last_seen
+    is included) without depending on real elapsed wall-clock time at
+    all. If this ever fails, the bug is in query()'s comparison logic
+    itself, not test timing."""
+    engine = IncidentEngine()
+    before = engine.record_anomaly(_anomaly(category="A"))
+    at_cutoff = engine.record_anomaly(_anomaly(category="B"))
+    after = engine.record_anomaly(_anomaly(category="C"))
+    before.last_seen = "2026-01-01T00:00:00+00:00"
+    at_cutoff.last_seen = "2026-01-01T00:00:01+00:00"
+    after.last_seen = "2026-01-01T00:00:02+00:00"
+
+    recent = engine.query(since="2026-01-01T00:00:01+00:00")
+
+    ids = {i.incident_id for i in recent}
+    assert before.incident_id not in ids
+    assert at_cutoff.incident_id in ids  # boundary is inclusive, by design
+    assert after.incident_id in ids
 
 
 def test_query_with_no_filters_returns_everything_sorted_by_recency():
