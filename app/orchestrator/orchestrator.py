@@ -10,12 +10,13 @@ import asyncio
 import re
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
 from app.core.config import Settings
 from app.core.errors import EliaraError, RoutingError, SQLExecutionError, SQLValidationError
-from app.core.logging import get_logger
+from app.core.logging import get_logger, get_request_id
 from app.core.models import QueryResult
 from app.detection.attention_queue import AttentionQueue, build_attention_queue
 from app.discovery.entity_resolver import EntityIndex, Resolution
@@ -27,6 +28,7 @@ from app.execution.formatter import to_llm_payload
 from app.execution.refine import RefineError, apply_refinement
 from app.execution.visual import build_visual
 from app.llm.anthropic_client import AnthropicClient
+from app.monitoring.models import RequestTrace
 from app.orchestrator.agent import ReasoningAgent
 from app.orchestrator.agent_models import AgentTrace
 from app.orchestrator.conversation import InMemoryConversationStore, Message, ResultEntry
@@ -102,6 +104,7 @@ class Orchestrator:
         settings: Settings,
         result_cache=None,
         audit=None,
+        telemetry=None,
         company_id: str | None = None,
         scan_views: list[str] | None = None,
         playbooks_dir=None,
@@ -118,6 +121,10 @@ class Orchestrator:
         self._sqlgen = SQLGenerator(llm, prompts, settings)
         self._cache = result_cache
         self._audit = audit
+        # Monitoring telemetry (app.monitoring.telemetry.TraceRecorder) —
+        # optional for the same reason audit is: single-company/test
+        # callers keep working unmodified without it.
+        self._telemetry = telemetry
         # company_id is optional so single-company/test callers keep working
         # unmodified; the company-aware call sites (CompanyContextManager)
         # always pass it, and it flows straight into every audit record.
@@ -456,6 +463,30 @@ class Orchestrator:
                 input_tokens=outcome.input_tokens,
                 output_tokens=outcome.output_tokens,
                 answer=outcome.answer,
+            )
+        if self._telemetry is not None:
+            self._telemetry.record(
+                RequestTrace(
+                    request_id=get_request_id() or "unknown",
+                    timestamp=datetime.now(UTC).isoformat(),
+                    company_id=self._company_id,
+                    session_id=session_id,
+                    question=message,
+                    route=outcome.decision,
+                    selected_view=outcome.view_used,
+                    sql_generated=outcome.sql_generated,
+                    routing_ms=outcome.routing_ms,
+                    execution_ms=outcome.execution_ms,
+                    answer_ms=outcome.answer_ms,
+                    latency_ms=outcome.latency_ms,
+                    input_tokens=outcome.input_tokens,
+                    output_tokens=outcome.output_tokens,
+                    row_count=self._last_result.row_count if self._last_result else None,
+                    empty_result=(self._last_result.row_count == 0) if self._last_result else None,
+                    clarification=outcome.decision == "clarify",
+                    status="success",
+                    data_as_of=data_as_of,
+                )
             )
         log.info(
             "chat_request_complete",
