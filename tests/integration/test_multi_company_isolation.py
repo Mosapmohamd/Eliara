@@ -258,8 +258,8 @@ def test_real_companies_yaml_marks_tire_guru_as_partial():
 
     repo_root = Path(__file__).resolve().parents[2]
     registry = CompanyRegistry.from_file(repo_root / "companies.yaml")
-    assert registry.get("beta").status == "full"
-    assert registry.get("tire_guru").status == "partial"
+    assert registry.get("e01").status == "full"
+    assert registry.get("e02").status == "partial"
 
 
 def test_real_companies_yaml_tire_guru_scan_views_configured():
@@ -274,7 +274,7 @@ def test_real_companies_yaml_tire_guru_scan_views_configured():
 
     repo_root = Path(__file__).resolve().parents[2]
     registry = CompanyRegistry.from_file(repo_root / "companies.yaml")
-    scan_views = registry.get("tire_guru").scan_views
+    scan_views = registry.get("e02").scan_views
     assert scan_views == [
         "vw_tire_guru_dead_stock_ranked",
         "vw_tire_guru_slow_moving_items",

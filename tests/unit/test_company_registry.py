@@ -77,3 +77,22 @@ def test_registry_from_missing_file_raises(tmp_path):
 
     with pytest.raises(CompanyRegistryError):
         CompanyRegistry.from_file(tmp_path / "does_not_exist.yaml")
+
+
+def test_critical_views_defaults_empty():
+    cfg = _config()
+    assert cfg.critical_views == []
+
+
+def test_data_health_checks_defaults_empty():
+    cfg = _config()
+    assert cfg.data_health_checks == []
+
+
+def test_critical_views_and_data_health_checks_configurable():
+    cfg = _config(
+        critical_views=["vw_important"],
+        data_health_checks=[{"view": "vw_important", "check": "nonzero", "column": "revenue"}],
+    )
+    assert cfg.critical_views == ["vw_important"]
+    assert cfg.data_health_checks[0]["check"] == "nonzero"

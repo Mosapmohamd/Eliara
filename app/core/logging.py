@@ -53,3 +53,13 @@ def bind_request_context(request_id: str, session_id: str | None = None) -> None
 
 def clear_request_context() -> None:
     structlog.contextvars.clear_contextvars()
+
+
+def get_request_id() -> str | None:
+    """Reads back the request_id bound by bind_request_context() for the
+    current request — used by the monitoring layer to tag a RequestTrace
+    with the same id already in every log line for that request, without
+    threading an extra parameter through every call in between. Safe
+    under concurrency: structlog.contextvars is real Python contextvars,
+    task-local by construction, not a shared/global dict."""
+    return structlog.contextvars.get_contextvars().get("request_id")

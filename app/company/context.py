@@ -67,11 +67,13 @@ class CompanyContextManager:
         settings: Settings,
         llm: AnthropicClient,
         audit: AuditTrail,
+        telemetry=None,
     ) -> None:
         self._registry = registry
         self._settings = settings
         self._llm = llm
         self._audit = audit
+        self._telemetry = telemetry
         self._contexts: dict[str, CompanyContext] = {}
         self._lock = threading.Lock()
 
@@ -161,6 +163,7 @@ class CompanyContextManager:
             settings=self._settings,
             result_cache=result_cache,
             audit=self._audit,
+            telemetry=self._telemetry,
             company_id=company_id,
             scan_views=cfg.scan_views,
             playbooks_dir=cfg.playbooks_dir,

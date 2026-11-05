@@ -1,0 +1,26 @@
+name: greeting_message
+version: 1
+description: >
+  Tire Guru's greeting override — same name+version as the shared default
+  in app/prompts/shared/templates/orchestrator/greeting_v1.yaml, so
+  PromptManager.for_company() picks this one for Tire Guru instead.
+  Static text, no LLM call, no variables — same rules as the shared
+  template. Sample questions here are grounded in views confirmed to
+  exist in Tire Guru's real schema (issue #6/#28 investigation), not
+  invented — dead stock, critical stockout, and supplier reliability are
+  all real, working scan views for this company.
+system: ""
+user_template: |
+  Hi — I'm Eliara, Tire Guru's business intelligence copilot.
+
+  I answer questions about your live inventory and sales data: stock
+  levels, dead and slow-moving stock, reorder and stockout risk,
+  supplier lead times and delivery reliability, and customer activity.
+
+  Try asking me:
+  - "Which tires are dead stock right now?"
+  - "Which items are at critical risk of stocking out?"
+  - "Which suppliers have the worst on-time delivery?"
+  - "How much capital is tied up in slow-moving stock?"
+
+  What would you like to look into?
