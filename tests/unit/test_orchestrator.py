@@ -368,6 +368,126 @@ async def test_audit_record_written_per_request(discovery, executor, tmp_path):
     assert entry["answer"] == "Business answer."
 
 
+async def test_telemetry_trace_written_per_request(discovery, executor, tmp_path):
+    import json
+
+    from app.core.config import Settings
+    from app.core.logging import bind_request_context, clear_request_context
+    from app.monitoring.telemetry import TraceRecorder
+    from app.orchestrator.conversation import InMemoryConversationStore
+    from app.prompts.loader import PromptManager
+
+    llm = FakeLLM(RoutingDecision(
+        decision="use_view",
+        view_name="vw_q002_top_10_customers_by_lifetime_revenue",
+    ))
+    index, retriever = discovery
+    orch = Orchestrator(
+        retriever=retriever, index=index, executor=executor,
+        prompts=PromptManager(), conversations=InMemoryConversationStore(),
+        llm=llm, settings=Settings(_env_file=None),
+        telemetry=TraceRecorder(tmp_path / "monitoring"),
+        company_id="beta",
+    )
+    bind_request_context(request_id="req-telemetry-1")
+    try:
+        await orch.handle("telemetry-session", "top customers please")
+    finally:
+        clear_request_context()
+
+    files = list((tmp_path / "monitoring").rglob("traces-*.jsonl"))
+    assert len(files) == 1
+    assert files[0].parent.name == "beta"
+    entry = json.loads(files[0].read_text().splitlines()[0])
+    assert entry["request_id"] == "req-telemetry-1"
+    assert entry["session_id"] == "telemetry-session"
+    assert entry["company_id"] == "beta"
+    assert entry["route"] == "use_view"
+    assert entry["selected_view"] == "vw_q002_top_10_customers_by_lifetime_revenue"
+    assert entry["sql_generated"] is False
+    assert entry["status"] == "success"
+
+
+async def test_telemetry_absence_never_breaks_a_request(discovery, executor):
+    """telemetry=None (the default) must behave exactly like audit=None
+    already does — a request must complete normally with no telemetry
+    configured at all, not just when telemetry is configured but fails."""
+    from app.core.config import Settings
+    from app.orchestrator.conversation import InMemoryConversationStore
+    from app.prompts.loader import PromptManager
+
+    llm = FakeLLM(RoutingDecision(
+        decision="use_view",
+        view_name="vw_q002_top_10_customers_by_lifetime_revenue",
+    ))
+    index, retriever = discovery
+    orch = Orchestrator(
+        retriever=retriever, index=index, executor=executor,
+        prompts=PromptManager(), conversations=InMemoryConversationStore(),
+        llm=llm, settings=Settings(_env_file=None),
+        company_id="beta",
+    )
+    outcome = await orch.handle("no-telemetry-session", "top customers please")
+    assert outcome.decision == "use_view"
+
+
+async def test_telemetry_captures_entity_resolution_outcome(discovery, executor, tmp_path):
+    """Issue #33: entity_type/entity_status/entity_resolved in the trace
+    must reflect what Resolution._entities.resolve() actually returned
+    this request — real data, not fabricated. Uses a fake EntityIndex
+    (same direct-attribute-assignment pattern CompanyContextManager
+    itself uses in production) so the resolution status is fully
+    controlled and verifiable."""
+    from app.discovery.entity_resolver import Resolution
+    from app.monitoring.telemetry import TraceRecorder
+
+    class _FakeEntities:
+        def resolve(self, column, value):
+            return Resolution(status="ambiguous", column=column, requested=value, candidates=["A Corp", "A Co"])
+
+    llm = FakeLLM(RoutingDecision(
+        decision="use_view",
+        view_name="vw_q002_top_10_customers_by_lifetime_revenue",
+        endpoint_filters={"customer_name": "A"},
+    ))
+    orch = _orchestrator(discovery, executor, llm)
+    orch._telemetry = TraceRecorder(tmp_path / "monitoring")
+    orch._entities = _FakeEntities()
+    await orch.handle("entity-session", "expand on A")
+
+    import json
+    files = list((tmp_path / "monitoring").rglob("traces-*.jsonl"))
+    entry = json.loads(files[0].read_text().splitlines()[0])
+    assert entry["entity_status"] == "ambiguous"
+    assert entry["entity_type"] == "customer_name"
+    assert entry["entity_resolved"] is False
+
+
+async def test_telemetry_captures_sql_retry_count(discovery, executor, tmp_path):
+    from app.monitoring.telemetry import TraceRecorder
+    from app.orchestrator.decision_models import SQLRequestSpec
+
+    llm = FakeLLM(
+        RoutingDecision(
+            decision="needs_sql",
+            sql_request=SQLRequestSpec(task_description="x", tables=["fact_ai_sales_net"]),
+        ),
+        call_texts=[
+            "SELECT * FROM forbidden_secret_table",         # rejected -> retry 1
+            "SELECT customer_code FROM fact_ai_sales_net",  # accepted
+            "Recovered answer.",
+        ],
+    )
+    orch = _orchestrator(discovery, executor, llm)
+    orch._telemetry = TraceRecorder(tmp_path / "monitoring")
+    await orch.handle("s1", "some custom question")
+
+    import json
+    files = list((tmp_path / "monitoring").rglob("traces-*.jsonl"))
+    entry = json.loads(files[0].read_text().splitlines()[0])
+    assert entry["sql_retries"] == 1
+
+
 async def test_greeting_replies_instantly_without_answer_call(discovery, executor):
     llm = FakeLLM(RoutingDecision(decision="greeting"))
     orch = _orchestrator(discovery, executor, llm)

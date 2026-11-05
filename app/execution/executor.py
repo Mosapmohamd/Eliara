@@ -10,6 +10,7 @@ Defense in depth (each layer independently sufficient):
 user-supplied values are never interpolated into SQL text.
 """
 
+import math
 import queue
 import re
 import sqlite3
@@ -49,6 +50,32 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _PROGRESS_OPCODE_INTERVAL = 5_000
 
 
+def _sqrt(x: float | None) -> float | None:
+    """SQLite has no built-in SQRT() — several curated views (e.g.
+    vw_q025_items_highest_demand_volatility, vw_q028_recommended_safety_
+    stock_fast_movers, vw_q064_recommended_eoq_for_specific_item,
+    vw_q087_supplier_lead_time_predictability) use it, and fail with
+    "no such function: SQRT" without this registered. Registered as a
+    Python function on every connection instead of rewriting the views —
+    no DB changes needed, and it's a read-only, side-effect-free math
+    function, well within the executor's read-only guarantees.
+
+    Mirrors SQL NULL-propagation semantics (NULL in, NULL out) rather than
+    raising, and returns None for a negative input rather than raising
+    ValueError — one row with an unexpected negative value in a demand-
+    volatility calculation shouldn't take down the whole query.
+    """
+    if x is None:
+        return None
+    try:
+        value = float(x)
+    except (TypeError, ValueError):
+        return None
+    if value < 0:
+        return None
+    return math.sqrt(value)
+
+
 def _authorizer(action: int, arg1, *_args) -> int:
     if action in _ALLOWED_ACTIONS:
         return sqlite3.SQLITE_OK
@@ -84,6 +111,7 @@ class ReadOnlyExecutor:
             timeout=5.0,
         )
         conn.set_authorizer(_authorizer)
+        conn.create_function("SQRT", 1, _sqrt, deterministic=True)
         return conn
 
     def _open_pool(self) -> None:

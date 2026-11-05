@@ -12,6 +12,7 @@ __pycache__/
 *.npz
 audit/
 data/
+monitoring_data/
 logs/
 dist/
 *.egg-info/
