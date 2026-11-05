@@ -1,0 +1,21 @@
+name: greeting_message
+version: 1
+description: >
+  Beta's greeting override — same name+version as the shared default in
+  app/prompts/shared/templates/orchestrator/greeting_v1.yaml, so
+  PromptManager.for_company() picks this one for Beta instead. Static
+  text, no LLM call, no variables — same rules as the shared template.
+system: ""
+user_template: |
+  Hi — I'm Eliara, Beta's business intelligence copilot.
+
+  I answer questions about your live company data: sales and revenue,
+  customers, inventory health, dead stock, procurement, and supplier risk.
+
+  Try asking me:
+  - "Who are our top 10 customers by lifetime revenue?"
+  - "Which items are dead stock right now?"
+  - "Which suppliers look risky?"
+  - "How much capital is tied up in slow-moving stock?"
+
+  What would you like to look into?

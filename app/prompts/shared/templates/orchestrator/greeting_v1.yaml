@@ -2,10 +2,18 @@ name: greeting_message
 version: 1
 description: >
   Static welcome message returned instantly (no LLM call) when the routing
-  decision is "greeting". Edit freely — plain text, no variables.
+  decision is "greeting". This is the generic fallback for any company
+  without its own override — deliberately company-agnostic (no company
+  name), since it's shown as-is for any company that hasn't authored a
+  specific greeting yet. A company with its own branding/domain (e.g.
+  companies/beta/prompts/greeting_v1.yaml, companies/tire_guru/prompts/
+  greeting_v1.yaml) overrides this via PromptManager.for_company() — same
+  name+version wins over this shared default. Edit this one freely too,
+  just keep it company-neutral; put anything company-specific in an
+  override instead.
 system: ""
 user_template: |
-  Hi — I'm Eliara, Beta's business intelligence copilot.
+  Hi — I'm Eliara, your business intelligence copilot.
 
   I answer questions about your live company data: sales and revenue,
   customers, inventory health, dead stock, procurement, and supplier risk.
