@@ -25,6 +25,8 @@ from app.core.config import get_settings
 from app.core.errors import EliaraError
 from app.core.logging import get_logger, setup_logging
 from app.llm.anthropic_client import AnthropicClient
+from app.monitoring.config import get_monitoring_config
+from app.monitoring.telemetry import TraceRecorder
 
 log = get_logger("main")
 
@@ -42,6 +44,12 @@ async def lifespan(app: FastAPI):
     # One shared audit trail; every record carries company_id and is filed
     # under audit_dir/<company_id>/ (see app/core/audit.py).
     audit = AuditTrail(settings.audit_dir, enabled=settings.audit_enabled)
+    # Monitoring telemetry — Phase 1 (observability only, see
+    # app/monitoring/README.md). Same directory-per-company pattern as
+    # audit, deliberately: it's the same proven concurrency-safe shape,
+    # not a coincidence.
+    monitor_config = get_monitoring_config()
+    telemetry = TraceRecorder(monitor_config.storage_dir, enabled=monitor_config.enabled)
 
     try:
         registry = CompanyRegistry.from_file(settings.companies_config_path)
@@ -50,7 +58,7 @@ async def lifespan(app: FastAPI):
         registry = None
 
     if registry is not None:
-        manager = CompanyContextManager(registry, settings, AnthropicClient(settings), audit)
+        manager = CompanyContextManager(registry, settings, AnthropicClient(settings), audit, telemetry)
         # Eager, per-company try/except build: a broken/missing database for
         # one company must not prevent the platform from starting, and must
         # not prevent OTHER companies from serving traffic.
