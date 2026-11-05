@@ -9,7 +9,7 @@ dependencies = [
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "structlog>=24.4",
-    "anthropic>=0.40",
+    "anthropic==0.117.0",
     "cachetools>=5.5",
     "numpy>=1.26",
     "rank-bm25>=0.2.2",

@@ -59,6 +59,23 @@ class CompanyConfig(BaseModel):
     # column-adaptation logic) points this at that table instead.
     registry_table: str = "chatbot_question_view_registry"
 
+    # Views considered critical for this company's business-data health
+    # monitoring (app/monitoring/data_health.py, issue #32) — smoke-tested
+    # for basic queryability. Empty means no critical-view checks run for
+    # this company yet, not an error; a company operates fully without
+    # this configured.
+    critical_views: list[str] = Field(default_factory=list)
+
+    # Configured data-health value checks (issue #32) — each entry:
+    # {"view": str, "column": str, "check": "nonzero"|"row_count_min"|
+    # "row_count_max"|"null_rate_max", "value": float, "description": str,
+    # "must_have_rows": bool}. Deliberately config-driven, not inferred
+    # from historical baselines — this project's baseline is "state
+    # exactly what's configured, never fabricate a threshold nobody
+    # confirmed." Empty list means no value checks configured yet, not a
+    # gap in the mechanism itself — see app/monitoring/data_health.py.
+    data_health_checks: list[dict] = Field(default_factory=list)
+
     # "full" (default) or "partial" — a company that resolves and boots
     # successfully (its database is real and readable) but is missing
     # curated playbooks/scan views/business glossary should be marked
